@@ -1,0 +1,43 @@
+# To download from the SRA
+prefetch --option-file SraAccList.txt
+
+# SraAccList.txt is obtained by exporting results from SRA to a file
+ls *.sra > toconvert.txt
+for i in `cat toconvert.txt`; do ./fastq-dump.exe --gzip $i; done
+
+# Trimmomatic
+java -jar trimmomatic-0.39.jar SE $i.fq.gz $i'_output.fq.gz' ILLUMINACLIP:adaptors.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
+
+# STAR INDEX
+STAR --runMode genomeGenerate --runThreadN 10 --genomeDir /mnt/projects/shirgaonkarn/dglab/Software/Alignment/STAR_index --genomeFastaFiles /mnt/projects/shirgaonkarn/dglab/Software/References/ncbi_grch38/GCF_000001405.39_GRCh38.p13_genomic.fna --sjdbGTFfile /mnt/projects/shirgaonkarn/dglab/Software/References/ncbi_grch38/GCF_000001405.39_GRCh38.p13_genomic.gff --sjdbGTFtagExonParentTranscript Parent --sjdbOverhang 99
+
+# STAR Alignment
+STAR --genomeDir /mnt/projects/shirgaonkarn/dglab/Software/Alignment/STAR_index --readFilesCommand zcat --readFilesIn $i --runThreadN 10 --outFileNamePrefix $i --outSAMtype BAM SortedByCoordinate --outSAMattributes All --sjdbGTFfile /mnt/projects/shirgaonkarn/dglab/Software/References/ncbi_grch38/GCF_000001405.39_GRCh38.p13_genomic.gff
+
+# 2-Pass STAR INDEX
+STAR --runMode genomeGenerate --runThreadN 10 --genomeDir /mnt/projects/shirgaonkarn/dglab/Ankur/folder5/$i/STAR_index --genomeFastaFiles /mnt/projects/shirgaonkarn/dglab/Software/References/ncbi_grch38/GCF_000001405.39_GRCh38.p13_genomic.fna --sjdbFileChrStartEnd /mnt/projects/shirgaonkarn/dglab/Ankur/folder5/$i/$i.fastq.gzSJ.out.tab --sjdbOverhang 99
+
+# 2-Pass STAR Alignment
+STAR --genomeDir ./$i/STAR_index --readFilesCommand zcat --readFilesIn ./$i/$i.fastq.gz --runThreadN 10 --outFileNamePrefix Pass2_$i
+
+# Add Read Groups
+PICARD AddOrReplaceReadGroups I='Pass2_'$i'Aligned.out.sam' O=$i'_rg_added_sorted.bam' SO=coordinate RGID=id RGLB=library RGPL=platform RGPU=machine RGSM=sample
+
+# Mark Duplicates
+PICARD MarkDuplicates I=$i'_rg_added_sorted.bam' O=$i'_dedupped.bam'  CREATE_INDEX=true VALIDATION_STRINGENCY=SILENT M=$i'.output.metrics'
+
+# PICARD CreateSequenceDictionary
+PICARD CreateSequenceDictionary R=GCF_000001405.39_GRCh38.p13_genomic_edited_unix.fna O=GCF_000001405.39_GRCh38.p13_genomic_edited_unix.dict
+
+# GATK BaseRecalibrator to remove known sites
+GATK BaseRecalibrator -I $i'_dedupped.bam' -R /mnt/projects/shirgaonkarn/dglab/Software/References/ncbi_grch38/GCF_000001405.39_GRCh38.p13_genomic_edited_unix.fna --known-sites /mnt/projects/shirgaonkarn/dglab/Software/References/ncbi_grch38/resources_broad_hg38_v0_1000G_phase1.snps.high_confidence.hg38.vcf --known-sites /mnt/projects/shirgaonkarn/dglab/Software/References/ncbi_grch38/resources_broad_hg38_v0_Homo_sapiens_assembly38.dbsnp138.vcf --known-sites /mnt/projects/shirgaonkarn/dglab/Software/References/ncbi_grch38/resources_broad_hg38_v0_Homo_sapiens_assembly38.known_indels.vcf --known-sites /mnt/projects/shirgaonkarn/dglab/Software/References/ncbi_grch38/resources_broad_hg38_v0_Mills_and_1000G_gold_standard.indels.hg38.vcf -O $i'_recal_data.table'
+
+# GATK ApplyBQSR
+GATK ApplyBQSR -R /mnt/projects/shirgaonkarn/dglab/Software/References/ncbi_grch38/GCF_000001405.39_GRCh38.p13_genomic_edited_unix.fna -I $i'_dedupped.bam' --bqsr-recal-file $i'_recal_data.table' -O $i'_bqsr.bam'
+
+# GATK HaplotypeCaller to get raw SNPs
+GATK --java-options "-Xmx50g" HaplotypeCaller -R /mnt/projects/shirgaonkarn/dglab/Software/References/ncbi_grch38/GCF_000001405.39_GRCh38.p13_genomic_edited_unix.fna -I $i'_bqsr.bam' -O $i'.vcf.gz'
+
+# Intersect with WES data
+for i in *.vcf.gz; do bcftools isec $i /mnt/projects/shirgaonkarn/dglab/Ankur/12Common_with_WES/HN120PRI_vs_MET_shared.vcf.gz -n =2 -w 1 -o $i.vcf; done
+for i in *.vcf.gz; do bcftools isec $i /mnt/projects/shirgaonkarn/dglab/Ankur/12Common_with_WES/HN137PRI_vs_MET_shared.vcf.gz -n =2 -w 1 -o $i.vcf; done
