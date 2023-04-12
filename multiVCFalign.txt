@@ -1,4 +1,4 @@
-### Below the list of commands should be run in sequence
+### Below list of commands should be run in sequence
 ##### list all filtered vcf containing only SNPs and filtered for alt reads with and without quality
 #### This command should be done for specific cell types
 printf "multiIntersectBed -i $(ls HN120P/*filtered.vcf | tr '\n' ' ')\n" | bash > HN120P_combined.bed
@@ -7,7 +7,7 @@ printf "multiIntersectBed -i $(ls HN137_paired/*filtered.vcf | tr '\n' ' ')\n" |
 printf "multiIntersectBed -i $(ls HN137_single/*filtered.vcf | tr '\n' ' ')\n" | bash > HN120P_Single_combined.bed
 
 ###Next select only those variants which are present in 50% of the cells,
-###The number is calculated by using the formular ((total number of the cells * 50)/100)
+###The number is calculated by using the formula ((total number of the cells * 50)/100)
 ####50 is used in this example
 awk -v numbertoFiter=50 '$4>=numbertoFiter' in_combined.bed | cut -f1,2,3 > out_combined_filtered_50_percent.bed
 
