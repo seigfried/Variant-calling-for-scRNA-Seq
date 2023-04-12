@@ -1,0 +1,37 @@
+### Below the list of commands should be run in sequence
+##### list all filtered vcf containing only SNPs and filtered for alt reads with and without quality
+#### This command should be done for specific cell types
+printf "multiIntersectBed -i $(ls HN120P/*filtered.vcf | tr '\n' ' ')\n" | bash > HN120P_combined.bed
+printf "multiIntersectBed -i $(ls HN120PCR/*filtered.vcf | tr '\n' ' ')\n" | bash > HN120PCR_combined.bed
+printf "multiIntersectBed -i $(ls HN137_paired/*filtered.vcf | tr '\n' ' ')\n" | bash > HN120P_paired_combined.bed
+printf "multiIntersectBed -i $(ls HN137_single/*filtered.vcf | tr '\n' ' ')\n" | bash > HN120P_Single_combined.bed
+
+###Next select only those variants which are present in 50% of the cells,
+###The number is calculated by using the formular ((total number of the cells * 50)/100)
+####50 is used in this example
+awk -v numbertoFiter=50 '$4>=numbertoFiter' in_combined.bed | cut -f1,2,3 > out_combined_filtered_50_percent.bed
+
+
+#### calculating common and Unique SNPs
+#### awk command is used; eg below
+awk -F"\t" 'FNR==NR{a[$1"#"$2"#"$3]=$0;next}{if(a[$1"#"$2"#"$3]){print $0}}' HN120P_combined_filtered_50_percent.bed HN120PCR_combined_filtered_50_percent.bed > HN120P_vs_HN120P_common_filtered_50_percent.bed 
+awk -F"\t" 'FNR==NR{a[$1"#"$2"#"$3]=$0;next}{if(!a[$1"#"$2"#"$3]){print $0}}' HN120P_combined_filtered_50_percent.bed HN120PCR_combined_filtered_50_percent.bed > HN120P_vs_HN120P_unique_to_HN120PCR_filtered_50_percent.bed 
+awk -F"\t" 'FNR==NR{a[$1"#"$2"#"$3]=$0;next}{if(!a[$1"#"$2"#"$3]){print $0}}' HN120PCR_combined_filtered_50_percent.bed HN120P_combined_filtered_50_percent.bed > HN120P_vs_HN120P_common_to_HN120P_filtered_50_percent.bed 
+
+########################################################
+####################### preparing files for annovar 
+###### Files for annovar was prepared using the overlapping SNPs
+###### Here's an example
+cat ../../HN120*/*filtered.vcf  | grep -v '^#' | awk -F"\t" 'FNR==NR{a[$1"\t"$2]=$0;next}{if(a[$1"\t"$3]){print a[$1"\t"$3]}else if (a[$1"\t"$2]){print a[$1"\t"$3]}}' - HN120P_vs_HN120P_common_unique_against_HN137P.bed | awk -F"\t" '{print $1"\t"$2"\t"$2"\t"$4"\t"$5}' | sort -u  > HN120P_vs_HN120P_common_unique_against_HN137P.avinput
+
+
+###### Run annovar 
+
+./table_annovar.pl HN120P_vs_HN120P_common_unique_against_HN137P.avinput humandb/ --protocol refGene,cytoBand,avsnp147,dbnsfp30a,hg19_refGeneWithVer,clinvar_20200316,cosmic68wgs  --operation g,r,f,f,gx,f,f --buildver hg19 -remove
+
+
+####### The above databases were downloaded using the command 
+./annotate_variation.pl -buildver hg19 -downdb -webfrom annovar XXXX humandb/
+####Where XXXX = refGene or cytoBand or avsnp147 or dbnsfp30a or hg19_refGeneWithVer or clinvar_20200316 or cosmic68wgs
+#### Description for each data can be found in the link below
+### https://doc-openbio.readthedocs.io/projects/annovar/en/latest/user-guide/download/
